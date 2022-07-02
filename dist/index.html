@@ -7,6 +7,17 @@
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
     <title>Document</title>
 </head>
+
+<body>
+
+
+<div id="app" style="color:#333;background:aqua">
+    <span style="color:red"> {{name}} 你好  {{age}}  你在哪里啊</span>
+    <div>{{name}}</div>
+    <div>{{age}}</div>
+</div>
+
+
 <script src="./vue.js">
 </script>
 <script>
@@ -21,17 +32,13 @@
                     address: '深圳'
                 }
             }
-        }
+        },
+        el: '#app'
     })
-    vm.name = 'newName'
-    vm.price.push(11111111111)
-    vm.price.push({b: '11111111'})
-    vm.price[0].a = 'new'
-    console.log(vm);
+    setTimeout(() => {
+        vm.name = 100
+        vm._update(vm._render())
+    },1000)
 </script>
-<body>
-
-
-{{name}}
 </body>
 </html>

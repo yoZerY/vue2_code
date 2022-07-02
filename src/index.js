@@ -1,4 +1,5 @@
 import {initMixin} from "./init";
+import {initLifeCycle} from "./lifeCycle";
 
 
 function Vue(options) { //options为自定义选项
@@ -7,5 +8,6 @@ function Vue(options) { //options为自定义选项
 
 initMixin(Vue)
 
+initLifeCycle(Vue)
 
 export default Vue
