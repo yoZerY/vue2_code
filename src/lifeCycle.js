@@ -57,7 +57,7 @@ export function initLifeCycle(Vue) {
     }
     Vue.prototype._s = function (value) {
         if (typeof value === 'object') return value
-        return JSON.stringify(value)
+        return value
     }
     Vue.prototype._render = function () {
         return this.$options.render.call(this)

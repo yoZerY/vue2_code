@@ -546,7 +546,7 @@
 
     Vue.prototype._s = function (value) {
       if (_typeof(value) === 'object') return value;
-      return JSON.stringify(value);
+      return value;
     };
 
     Vue.prototype._render = function () {
