@@ -2,7 +2,7 @@ import Vue from "./index";
 import {mergeOptions} from "./utils";
 
 
-export function gloablApi(Vue) {
+export function globalApi(Vue) {
     Vue.options = {}
 
     Vue.mixin = function (mixin) {

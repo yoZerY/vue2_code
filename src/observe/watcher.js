@@ -1,4 +1,4 @@
-import Dep from "./dep";
+import Dep, {popTarget, pushTarget} from "./dep";
 
 let id = 0
 
@@ -6,13 +6,27 @@ let id = 0
 
 // 每个组件都有单独的watcher
 class Watcher {
-    constructor(vm, fn, options) {
+    constructor(vm, fn, options, cb) {
         this.id = id++
         this.renderWatcher = options //渲染 Watcher
-        this.getter = fn
+
+        if (typeof fn === 'string') {
+            this.getter = function () {
+                return vm[fn]
+            }
+        } else {
+            this.getter = fn
+        }
+
         this.deps = [] //后续实现计算属性和清理工作
         this.depsId = new Set()
-        this.get()
+        this.lazy = options.lazy
+        this.dirty = this.lazy
+        this.user = options.user // 用户自己的watch
+        this.cb = cb
+        this.vm = vm
+
+        this.value = this.lazy ? undefined : this.get()
     }
 
     addDep(dep) {
@@ -25,17 +39,40 @@ class Watcher {
     }
 
     get() {
-        Dep.target = this  //创建渲染watcher的时候把当前的渲染watcher放在Dep.target上
-        this.getter()
-        Dep.target = null
+        pushTarget(this)  //创建渲染watcher的时候把当前的渲染watcher放在Dep.target上
+        const value = this.getter.call(this.vm)
+        popTarget(this)
+        return value
+    }
+
+    evaluate() {
+        this.value = this.get()
+        this.dirty = false
     }
 
     update() {
-        queueWatcher(this) //把当前watcher存起来
+        if (this.lazy) {
+            this.dirty = true
+        } else {
+            queueWatcher(this) //把当前watcher存起来
+        }
+    }
+
+    depend() {
+        let i = this.deps.length
+        while (i--) {
+            this.deps[i].depend()
+        }
     }
 
     run() {
-        this.get()
+        let oldValue = this.value
+        let newVal = this.get()
+        if (this.user) {
+            this.cb.call(this.vm, newVal, oldValue)
+        } else {
+            this.get()
+        }
     }
 }
 

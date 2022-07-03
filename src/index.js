@@ -1,7 +1,7 @@
 import {initMixin} from "./init";
 import {initLifeCycle} from "./lifeCycle";
-import {nextTick} from "./observe/watcher";
-import {gloablApi} from "./gloablApi";
+import Watcher, {nextTick} from "./observe/watcher";
+import {globalApi} from "./globalApi";
 
 
 function Vue(options) { //options为自定义选项
@@ -14,7 +14,13 @@ initMixin(Vue)
 
 initLifeCycle(Vue)
 
+globalApi(Vue)
 
-gloablApi(Vue)
+Vue.prototype.$watch = function (fn, cb, op = {}) {
+    console.log('fn', fn);
+    console.log('cb', cb);
+    new Watcher(this, fn, {user: true}, cb)
+}
+
 
 export default Vue

@@ -11,7 +11,7 @@
 <body>
 
 
-<div id="app" style="color:#333;background:aqua">
+<div id="app">
     <span style="color:red"> {{name}} 你好  {{age}}  你在哪里啊</span>
     <div>{{name}}</div>
     <div>{{age}}</div>
@@ -29,15 +29,20 @@
 
             }
         },
-        computed:{
-          info(){
-              return 
-          }
+        watch: {
+            name(a,b) {
+                console.log('a',a);
+                console.log('b',b);
+                console.log('======watch=======');
+            }
         },
         el: '#app'
     })
 
     console.log(Vue.options);
+    setTimeout(() => {
+        vm.name = 'newNAME'
+    }, 1000)
 </script>
 </body>
 </html>

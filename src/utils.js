@@ -1,7 +1,7 @@
 
 const strats = {}
 const LIFECYCLE = [
-    'beforecreate', 'created'
+    'beforeCreate', 'created'
 ]
 LIFECYCLE.forEach(hook => {
     strats[hook] = function (parent, child) {

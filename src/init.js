@@ -9,7 +9,7 @@ export function initMixin(Vue) { // 给vue添加init方法(初始化方法)
 
         vm.$options = mergeOptions(this.constructor.options, options)
 
-        callHook(vm, 'beforecreate')
+        callHook(vm, 'beforeCreate')
 
         //初始化状态
         initState(vm)

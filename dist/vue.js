@@ -171,6 +171,15 @@
   }();
 
   Dep.target = null;
+  var stack = [];
+  function pushTarget(watcher) {
+    stack.push(watcher);
+    Dep.target = watcher;
+  }
+  function popTarget(watcher) {
+    stack.pop();
+    Dep.target = stack[stack.length - 1];
+  }
 
   var Observer = /*#__PURE__*/function () {
     function Observer(data) {
@@ -252,11 +261,188 @@
     return new Observer(data);
   }
 
+  var id = 0; //每个属性有Dep（属性石被观察者） watcher就是观察者（属性变化就会通知 watcher）  观察者模式
+  // 每个组件都有单独的watcher
+
+  var Watcher = /*#__PURE__*/function () {
+    function Watcher(vm, fn, options, cb) {
+      _classCallCheck(this, Watcher);
+
+      this.id = id++;
+      this.renderWatcher = options; //渲染 Watcher
+
+      if (typeof fn === 'string') {
+        this.getter = function () {
+          return vm[fn];
+        };
+      } else {
+        this.getter = fn;
+      }
+
+      this.deps = []; //后续实现计算属性和清理工作
+
+      this.depsId = new Set();
+      this.lazy = options.lazy;
+      this.dirty = this.lazy;
+      this.user = options.user; // 用户自己的watch
+
+      this.cb = cb;
+      this.vm = vm;
+      this.value = this.lazy ? undefined : this.get();
+    }
+
+    _createClass(Watcher, [{
+      key: "addDep",
+      value: function addDep(dep) {
+        var id = dep.id;
+
+        if (!this.depsId.has(id)) {
+          this.deps.push(dep);
+          this.depsId.add(id);
+          dep.addSub(this); //dep内存储 watcher
+        }
+      }
+    }, {
+      key: "get",
+      value: function get() {
+        pushTarget(this); //创建渲染watcher的时候把当前的渲染watcher放在Dep.target上
+
+        var value = this.getter.call(this.vm);
+        popTarget();
+        return value;
+      }
+    }, {
+      key: "evaluate",
+      value: function evaluate() {
+        this.value = this.get();
+        this.dirty = false;
+      }
+    }, {
+      key: "update",
+      value: function update() {
+        if (this.lazy) {
+          this.dirty = true;
+        } else {
+          queueWatcher(this); //把当前watcher存起来
+        }
+      }
+    }, {
+      key: "depend",
+      value: function depend() {
+        var i = this.deps.length;
+
+        while (i--) {
+          this.deps[i].depend();
+        }
+      }
+    }, {
+      key: "run",
+      value: function run() {
+        var oldValue = this.value;
+        var newVal = this.get();
+
+        if (this.user) {
+          this.cb.call(this.vm, newVal, oldValue);
+        } else {
+          this.get();
+        }
+      }
+    }]);
+
+    return Watcher;
+  }(); //========================queueWatcher====================
+
+
+  var queue = [];
+  var has = {};
+  var pending = false;
+
+  function flashQueue() {
+    var copyQueue = queue.slice(0);
+    queue = [];
+    has = {};
+    pending = false;
+    copyQueue.forEach(function (watcher) {
+      return watcher.run();
+    });
+  }
+
+  function queueWatcher(watcher) {
+    var id = watcher.id;
+
+    if (!has[id]) {
+      queue.push(watcher);
+      has[id] = true; //多次更新最终只更新一次
+
+      if (!pending) {
+        nextTick(flashQueue);
+        pending = true;
+      }
+    }
+  } //========================nextTick=========================
+
+
+  var callbacks = [];
+  var waiting = false;
+
+  function flushCallbacks() {
+    waiting = false;
+    var cbs = callbacks.slice(0);
+    callbacks = [];
+    cbs.forEach(function (cb) {
+      return cb();
+    });
+  }
+
+  var timeFunc;
+
+  if (Promise) {
+    timeFunc = function timeFunc() {
+      Promise.resolve().then(flushCallbacks);
+    };
+  } else if (MutationObserver) {
+    var observe = new MutationObserver(flushCallbacks);
+    var textNode = document.createTextNode(1);
+    observe.observe(textNode, {
+      characterData: true
+    });
+
+    timeFunc = function timeFunc() {
+      textNode.textContent = 2;
+    };
+  } else if (setImmediate) {
+    timeFunc = function timeFunc() {
+      setImmediate(flushCallbacks);
+    };
+  } else {
+    timeFunc = function timeFunc() {
+      setTimeout(flushCallbacks);
+    };
+  }
+
+  function nextTick(cb) {
+    callbacks.push(cb);
+
+    if (!waiting) {
+      timeFunc();
+      waiting = true;
+    }
+  }
+   // 给每个属性增加一个dep 目的是收集watcher
+
   function initState(vm) {
     var opts = vm.$options; //获取所有选项
 
     if (opts.data) {
       initData(vm);
+    }
+
+    if (opts.computed) {
+      initComputed(vm);
+    }
+
+    if (opts.watch) {
+      initWatch(vm);
     }
   }
 
@@ -282,6 +468,70 @@
     for (var key in data) {
       proxy(vm, '_data', key);
     }
+  }
+
+  function initComputed(vm) {
+    var computed = vm.$options.computed;
+    var watchers = vm._computedWatchers = {};
+
+    for (var computedKey in computed) {
+      var userDef = computed[computedKey];
+      var fn = typeof userDef === 'function' ? userDef : userDef.get;
+      watchers[computedKey] = new Watcher(vm, fn, {
+        lazy: true
+      });
+      defineComputed(vm, computedKey, userDef);
+    }
+  }
+
+  function defineComputed(vm, key, userDef) {
+    var setter = userDef.set || function () {};
+
+    Object.defineProperty(vm, key, {
+      get: createComputedGetter(key),
+      set: setter
+    });
+  }
+
+  function createComputedGetter(key) {
+    return function () {
+      var watcher = this._computedWatchers[key];
+
+      if (watcher.dirty) {
+        watcher.evaluate();
+      }
+
+      if (Dep.target) {
+        watcher.depend();
+      }
+
+      return watcher.value;
+    };
+  }
+
+  function initWatch(vm) {
+    var watch = vm.$options.watch;
+    console.log(watch);
+
+    for (var watchKey in watch) {
+      var w = watch[watchKey];
+
+      if (Array.isArray(w)) {
+        for (var i = 0; i < w.length; i++) {
+          createWatch(vm, watchKey, w[i]);
+        }
+      } else {
+        createWatch(vm, watchKey, w);
+      }
+    }
+  }
+
+  function createWatch(vm, key, fn) {
+    if (typeof fn === 'string') {
+      fn = vm[fn];
+    }
+
+    return vm.$watch(key, fn);
   }
 
   var ncname = "[a-zA-Z_][\\-\\.0-9_a-zA-Z]*";
@@ -524,135 +774,6 @@
     };
   }
 
-  var id = 0; //每个属性有Dep（属性石被观察者） watcher就是观察者（属性变化就会通知 watcher）  观察者模式
-  // 每个组件都有单独的watcher
-
-  var Watcher = /*#__PURE__*/function () {
-    function Watcher(vm, fn, options) {
-      _classCallCheck(this, Watcher);
-
-      this.id = id++;
-      this.renderWatcher = options; //渲染 Watcher
-
-      this.getter = fn;
-      this.deps = []; //后续实现计算属性和清理工作
-
-      this.depsId = new Set();
-      this.get();
-    }
-
-    _createClass(Watcher, [{
-      key: "addDep",
-      value: function addDep(dep) {
-        var id = dep.id;
-
-        if (!this.depsId.has(id)) {
-          this.deps.push(dep);
-          this.depsId.add(id);
-          dep.addSub(this); //dep内存储 watcher
-        }
-      }
-    }, {
-      key: "get",
-      value: function get() {
-        Dep.target = this; //创建渲染watcher的时候把当前的渲染watcher放在Dep.target上
-
-        this.getter();
-        Dep.target = null;
-      }
-    }, {
-      key: "update",
-      value: function update() {
-        queueWatcher(this); //把当前watcher存起来
-      }
-    }, {
-      key: "run",
-      value: function run() {
-        this.get();
-      }
-    }]);
-
-    return Watcher;
-  }(); //========================queueWatcher====================
-
-
-  var queue = [];
-  var has = {};
-  var pending = false;
-
-  function flashQueue() {
-    var copyQueue = queue.slice(0);
-    queue = [];
-    has = {};
-    pending = false;
-    copyQueue.forEach(function (watcher) {
-      return watcher.run();
-    });
-  }
-
-  function queueWatcher(watcher) {
-    var id = watcher.id;
-
-    if (!has[id]) {
-      queue.push(watcher);
-      has[id] = true; //多次更新最终只更新一次
-
-      if (!pending) {
-        nextTick(flashQueue);
-        pending = true;
-      }
-    }
-  } //========================nextTick=========================
-
-
-  var callbacks = [];
-  var waiting = false;
-
-  function flushCallbacks() {
-    waiting = false;
-    var cbs = callbacks.slice(0);
-    callbacks = [];
-    cbs.forEach(function (cb) {
-      return cb();
-    });
-  }
-
-  var timeFunc;
-
-  if (Promise) {
-    timeFunc = function timeFunc() {
-      Promise.resolve().then(flushCallbacks);
-    };
-  } else if (MutationObserver) {
-    var observe = new MutationObserver(flushCallbacks);
-    var textNode = document.createTextNode(1);
-    observe.observe(textNode, {
-      characterData: true
-    });
-
-    timeFunc = function timeFunc() {
-      textNode.textContent = 2;
-    };
-  } else if (setImmediate) {
-    timeFunc = function timeFunc() {
-      setImmediate(flushCallbacks);
-    };
-  } else {
-    timeFunc = function timeFunc() {
-      setTimeout(flushCallbacks);
-    };
-  }
-
-  function nextTick(cb) {
-    callbacks.push(cb);
-
-    if (!waiting) {
-      timeFunc();
-      waiting = true;
-    }
-  }
-   // 给每个属性增加一个dep 目的是收集watcher
-
   function createElm(vNode) {
     var tag = vNode.tag,
         data = vNode.data,
@@ -745,7 +866,7 @@
   // 虚拟节点创造真实DOM
 
   var strats = {};
-  var LIFECYCLE = ['beforecreate', 'created'];
+  var LIFECYCLE = ['beforeCreate', 'created'];
   LIFECYCLE.forEach(function (hook) {
     strats[hook] = function (parent, child) {
       if (child) {
@@ -788,7 +909,7 @@
     Vue.prototype._init = function (options) {
       var vm = this;
       vm.$options = mergeOptions(this.constructor.options, options);
-      callHook(vm, 'beforecreate'); //初始化状态
+      callHook(vm, 'beforeCreate'); //初始化状态
 
       initState(vm);
       callHook(vm, 'created');
@@ -828,7 +949,7 @@
     };
   }
 
-  function gloablApi(Vue) {
+  function globalApi(Vue) {
     Vue.options = {};
 
     Vue.mixin = function (mixin) {
@@ -845,7 +966,15 @@
   Vue.prototype.$nextTick = nextTick;
   initMixin(Vue);
   initLifeCycle(Vue);
-  gloablApi(Vue);
+  globalApi(Vue);
+
+  Vue.prototype.$watch = function (fn, cb) {
+    console.log('fn', fn);
+    console.log('cb', cb);
+    new Watcher(this, fn, {
+      user: true
+    }, cb);
+  };
 
   return Vue;
 
