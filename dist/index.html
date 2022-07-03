@@ -26,19 +26,18 @@
             return {
                 name: '张三',
                 age: 20,
-                price: [{a: 'inner'}, 1, 2, 3, 4, 5],
-                info: {
-                    num: 30,
-                    address: '深圳'
-                }
+
             }
+        },
+        computed:{
+          info(){
+              return 
+          }
         },
         el: '#app'
     })
-    setTimeout(() => {
-        vm.name = 100
-        vm._update(vm._render())
-    },1000)
+
+    console.log(Vue.options);
 </script>
 </body>
 </html>

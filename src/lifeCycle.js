@@ -1,5 +1,5 @@
 import {createElementVNode, createTextVNode} from "./vdom";
-
+import Watcher from "./observe/watcher";
 
 function createElm(vNode) {
     const {tag, data, children, text} = vNode
@@ -26,7 +26,6 @@ function patchProps(el, data) {
         }
     }
 }
-
 
 function patch(oldVNode, vNode) {
     const isRealElement = oldVNode.nodeType
@@ -64,10 +63,20 @@ export function initLifeCycle(Vue) {
     }
 }
 
-
 export function mountComponent(vm, el) {
     vm.$el = el
-    vm._update(vm._render())
+    const updateComponent = () => {
+        //更新组件
+        vm._update(vm._render())
+    }
+    new Watcher(vm, updateComponent, true)
+}
+
+export function  callHook(vm,hook){
+    const hookArr = vm.$options[hook]
+    if(hookArr){
+        hookArr.forEach(e => e.call(vm))
+    }
 }
 
 // 1.生成相应数据  2.模板转换成AST语法树   3.ast转换成render函数

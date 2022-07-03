@@ -138,11 +138,45 @@
     };
   });
 
+  var id$1 = 0; //属性的dep收集Watcher
+
+  var Dep = /*#__PURE__*/function () {
+    function Dep() {
+      _classCallCheck(this, Dep);
+
+      this.id = id$1++;
+      this.subs = []; //存放当前属性对应的Watcher
+    }
+
+    _createClass(Dep, [{
+      key: "depend",
+      value: function depend() {
+        Dep.target.addDep(this); // watcher内添加DEP
+      }
+    }, {
+      key: "addSub",
+      value: function addSub(watcher) {
+        this.subs.push(watcher);
+      }
+    }, {
+      key: "notify",
+      value: function notify() {
+        this.subs.forEach(function (watcher) {
+          return watcher.update();
+        });
+      }
+    }]);
+
+    return Dep;
+  }();
+
+  Dep.target = null;
+
   var Observer = /*#__PURE__*/function () {
     function Observer(data) {
       _classCallCheck(this, Observer);
 
-      // Object.defineProperty() 只能劫持已存在得属性 （$set $delete）
+      // Object.defineProperty() 只能劫持已存在的属性 （$set $delete）
       Object.defineProperty(data, '__ob__', {
         //__ob__属性不可枚举
         value: this,
@@ -171,7 +205,7 @@
       key: "obServerArray",
       value: function obServerArray(data) {
         data.forEach(function (item) {
-          return observe(item);
+          return observe$1(item);
         });
       }
     }]);
@@ -181,24 +215,30 @@
 
   function defineReactive(target, key, value) {
     //属性劫持
-    observe(value); //递归劫持数据
+    observe$1(value); //递归劫持数据
 
+    var dep = new Dep();
     Object.defineProperty(target, key, {
       get: function get() {
         //取值get
-        console.log("\u53D6\u503Cget:".concat(value));
+        // console.log(`取值get:${value}`);
+        if (Dep.target) {
+          dep.depend();
+        }
+
         return value;
       },
       set: function set(newValue) {
         //设置值set
-        console.log("\u8BBE\u7F6E\u503Cset:".concat(newValue));
+        // console.log(`设置值set:${newValue}`);
         if (newValue === value) return;
-        observe(newValue);
+        observe$1(newValue);
         value = newValue;
+        dep.notify(); //通知Dep更新
       }
     });
   }
-  function observe(data) {
+  function observe$1(data) {
     if (_typeof(data) !== 'object' || data === null) {
       //只对对象进行劫持
       return;
@@ -237,7 +277,7 @@
     data = typeof data === 'function' ? data.call(vm) : data;
     vm._data = data; //数据劫持
 
-    observe(data); //把vm.data 用vm代理
+    observe$1(data); //把vm.data 用vm代理
 
     for (var key in data) {
       proxy(vm, '_data', key);
@@ -484,6 +524,135 @@
     };
   }
 
+  var id = 0; //每个属性有Dep（属性石被观察者） watcher就是观察者（属性变化就会通知 watcher）  观察者模式
+  // 每个组件都有单独的watcher
+
+  var Watcher = /*#__PURE__*/function () {
+    function Watcher(vm, fn, options) {
+      _classCallCheck(this, Watcher);
+
+      this.id = id++;
+      this.renderWatcher = options; //渲染 Watcher
+
+      this.getter = fn;
+      this.deps = []; //后续实现计算属性和清理工作
+
+      this.depsId = new Set();
+      this.get();
+    }
+
+    _createClass(Watcher, [{
+      key: "addDep",
+      value: function addDep(dep) {
+        var id = dep.id;
+
+        if (!this.depsId.has(id)) {
+          this.deps.push(dep);
+          this.depsId.add(id);
+          dep.addSub(this); //dep内存储 watcher
+        }
+      }
+    }, {
+      key: "get",
+      value: function get() {
+        Dep.target = this; //创建渲染watcher的时候把当前的渲染watcher放在Dep.target上
+
+        this.getter();
+        Dep.target = null;
+      }
+    }, {
+      key: "update",
+      value: function update() {
+        queueWatcher(this); //把当前watcher存起来
+      }
+    }, {
+      key: "run",
+      value: function run() {
+        this.get();
+      }
+    }]);
+
+    return Watcher;
+  }(); //========================queueWatcher====================
+
+
+  var queue = [];
+  var has = {};
+  var pending = false;
+
+  function flashQueue() {
+    var copyQueue = queue.slice(0);
+    queue = [];
+    has = {};
+    pending = false;
+    copyQueue.forEach(function (watcher) {
+      return watcher.run();
+    });
+  }
+
+  function queueWatcher(watcher) {
+    var id = watcher.id;
+
+    if (!has[id]) {
+      queue.push(watcher);
+      has[id] = true; //多次更新最终只更新一次
+
+      if (!pending) {
+        nextTick(flashQueue);
+        pending = true;
+      }
+    }
+  } //========================nextTick=========================
+
+
+  var callbacks = [];
+  var waiting = false;
+
+  function flushCallbacks() {
+    waiting = false;
+    var cbs = callbacks.slice(0);
+    callbacks = [];
+    cbs.forEach(function (cb) {
+      return cb();
+    });
+  }
+
+  var timeFunc;
+
+  if (Promise) {
+    timeFunc = function timeFunc() {
+      Promise.resolve().then(flushCallbacks);
+    };
+  } else if (MutationObserver) {
+    var observe = new MutationObserver(flushCallbacks);
+    var textNode = document.createTextNode(1);
+    observe.observe(textNode, {
+      characterData: true
+    });
+
+    timeFunc = function timeFunc() {
+      textNode.textContent = 2;
+    };
+  } else if (setImmediate) {
+    timeFunc = function timeFunc() {
+      setImmediate(flushCallbacks);
+    };
+  } else {
+    timeFunc = function timeFunc() {
+      setTimeout(flushCallbacks);
+    };
+  }
+
+  function nextTick(cb) {
+    callbacks.push(cb);
+
+    if (!waiting) {
+      timeFunc();
+      waiting = true;
+    }
+  }
+   // 给每个属性增加一个dep 目的是收集watcher
+
   function createElm(vNode) {
     var tag = vNode.tag,
         data = vNode.data,
@@ -556,18 +725,73 @@
   function mountComponent(vm, el) {
     vm.$el = el;
 
-    vm._update(vm._render());
+    var updateComponent = function updateComponent() {
+      //更新组件
+      vm._update(vm._render());
+    };
+
+    new Watcher(vm, updateComponent, true);
+  }
+  function callHook(vm, hook) {
+    var hookArr = vm.$options[hook];
+
+    if (hookArr) {
+      hookArr.forEach(function (e) {
+        return e.call(vm);
+      });
+    }
   } // 1.生成相应数据  2.模板转换成AST语法树   3.ast转换成render函数
   // render 生成虚拟节点
   // 虚拟节点创造真实DOM
+
+  var strats = {};
+  var LIFECYCLE = ['beforecreate', 'created'];
+  LIFECYCLE.forEach(function (hook) {
+    strats[hook] = function (parent, child) {
+      if (child) {
+        if (parent) {
+          return parent.concat(child);
+        } else {
+          return [child];
+        }
+      } else {
+        return parent;
+      }
+    };
+  });
+  function mergeOptions(parent, child) {
+    var options = {};
+
+    for (var parentKey in parent) {
+      mergeField(parentKey);
+    }
+
+    for (var childKey in child) {
+      if (!parent.hasOwnProperty(childKey)) {
+        mergeField(childKey);
+      }
+    }
+
+    function mergeField(key) {
+      if (strats[key]) {
+        options[key] = strats[key](parent[key], child[key]);
+      } else {
+        options[key] = child[key] || parent[key];
+      }
+    }
+
+    return options;
+  }
 
   function initMixin(Vue) {
     // 给vue添加init方法(初始化方法)
     Vue.prototype._init = function (options) {
       var vm = this;
-      vm.$options = options; //初始化状态
+      vm.$options = mergeOptions(this.constructor.options, options);
+      callHook(vm, 'beforecreate'); //初始化状态
 
       initState(vm);
+      callHook(vm, 'created');
 
       if (options.el) {
         vm.$mount(options.el);
@@ -604,13 +828,24 @@
     };
   }
 
+  function gloablApi(Vue) {
+    Vue.options = {};
+
+    Vue.mixin = function (mixin) {
+      this.options = mergeOptions(this.options, mixin);
+      return this;
+    };
+  }
+
   function Vue(options) {
     //options为自定义选项
     this._init(options);
   }
 
+  Vue.prototype.$nextTick = nextTick;
   initMixin(Vue);
   initLifeCycle(Vue);
+  gloablApi(Vue);
 
   return Vue;
 

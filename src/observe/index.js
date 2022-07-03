@@ -1,8 +1,9 @@
 import {newArrayProto} from "./array";
+import Dep from "./dep";
 
 class Observer {
     constructor(data) {
-        // Object.defineProperty() 只能劫持已存在得属性 （$set $delete）
+        // Object.defineProperty() 只能劫持已存在的属性 （$set $delete）
 
         Object.defineProperty(data, '__ob__', { //__ob__属性不可枚举
             value: this,
@@ -30,16 +31,21 @@ class Observer {
 
 export function defineReactive(target, key, value) { //属性劫持
     observe(value) //递归劫持数据
+    let dep = new Dep()
     Object.defineProperty(target, key, {
         get() { //取值get
-            console.log(`取值get:${value}`);
+            // console.log(`取值get:${value}`);
+            if (Dep.target) {
+                dep.depend()
+            }
             return value
         },
         set(newValue) { //设置值set
-            console.log(`设置值set:${newValue}`);
+            // console.log(`设置值set:${newValue}`);
             if (newValue === value) return
             observe(newValue)
             value = newValue
+            dep.notify() //通知Dep更新
         }
     })
 }
